@@ -12,6 +12,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 
 // apriltag
@@ -114,14 +115,17 @@ private:
     std::atomic<bool> profile;
     std::unordered_map<int, std::string> tag_frames;
     std::unordered_map<int, double> tag_sizes;
+    bool enable_detection;
 
     std::function<void(apriltag_family_t*)> tf_destructor;
 
     const image_transport::CameraSubscriber sub_cam;
     const rclcpp::Publisher<apriltag_msgs::msg::AprilTagDetectionArray>::SharedPtr pub_detections;
+    const rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_service;
     tf2_ros::TransformBroadcaster tf_broadcaster;
 
     void onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_img, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg_ci);
+    void enable_cb(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
     rcl_interfaces::msg::SetParametersResult onParameter(const std::vector<rclcpp::Parameter>& parameters);
 };
@@ -137,6 +141,7 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     // topics
     sub_cam(image_transport::create_camera_subscription(this, "image_rect", std::bind(&AprilTagNode::onCamera, this, std::placeholders::_1, std::placeholders::_2), declare_parameter("image_transport", "raw", descr({}, true)), rmw_qos_profile_sensor_data)),
     pub_detections(create_publisher<apriltag_msgs::msg::AprilTagDetectionArray>("detections", rclcpp::QoS(1))),
+    enable_service(create_service<std_srvs::srv::SetBool>("enable_detection", std::bind(&AprilTagNode::enable_cb, this, std::placeholders::_1, std::placeholders::_2))),
     tf_broadcaster(this)
 {
     // read-only parameters
@@ -147,6 +152,8 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     const auto ids = declare_parameter("tag.ids", std::vector<int64_t>{}, descr("tag ids", true));
     const auto frames = declare_parameter("tag.frames", std::vector<std::string>{}, descr("tag frame names per id", true));
     const auto sizes = declare_parameter("tag.sizes", std::vector<double>{}, descr("tag sizes per id", true));
+
+    enable_detection = true;
 
     // detector parameters in "detector" namespace
     declare_parameter("detector.threads", td->nthreads, descr("number of threads"));
@@ -190,9 +197,19 @@ AprilTagNode::~AprilTagNode()
     tf_destructor(tf);
 }
 
+void AprilTagNode::enable_cb(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                             std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+    enable_detection = request->data;
+    response->success = true;
+}
+
 void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_img,
                             const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg_ci)
 {
+    if(!enable_detection)
+        return;
+
     // precompute inverse projection matrix
     const Mat3 Pinv = Eigen::Map<const Eigen::Matrix<double, 3, 4, Eigen::RowMajor>>(msg_ci->p.data()).leftCols<3>().inverse();
 

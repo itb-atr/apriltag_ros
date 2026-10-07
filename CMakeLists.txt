@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.20)
 
 project(apriltag_ros)
 
@@ -53,8 +53,23 @@ target_link_libraries(tags apriltag::apriltag)
 set_property(TARGET tags PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(AprilTagNode SHARED src/AprilTagNode.cpp)
-ament_target_dependencies(AprilTagNode rclcpp rclcpp_components sensor_msgs apriltag_msgs tf2_ros image_transport cv_bridge std_srvs)
-target_link_libraries(AprilTagNode apriltag::apriltag tags Eigen3::Eigen)
+    target_link_libraries(AprilTagNode PUBLIC
+      ${apriltag_msgs_TARGETS}
+      ${sensor_msgs_TARGETS}
+      ${std_srvs_TARGETS}
+      cv_bridge::cv_bridge
+      image_transport::image_transport
+      rclcpp::rclcpp
+      rclcpp_components::component
+      rclcpp_components::component_manager
+      sensor_msgs::sensor_msgs_library
+      tf2_ros::static_transform_broadcaster_node
+      tf2_ros::tf2_ros
+      apriltag::apriltag
+      tags
+      Eigen3::Eigen
+    )
+
 rclcpp_components_register_node(AprilTagNode PLUGIN "AprilTagNode" EXECUTABLE "apriltag_node")
 
 ament_environment_hooks(${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH})
